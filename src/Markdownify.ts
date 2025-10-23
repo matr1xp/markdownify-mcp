@@ -123,7 +123,7 @@ export class Markdownify {
       if (url) {
         const response = await fetch(url);
 
-        let extension = null;
+        let extension = "html"; // Default to html for web content
 
         if (url.endsWith(".pdf")) {
           extension = "pdf";
