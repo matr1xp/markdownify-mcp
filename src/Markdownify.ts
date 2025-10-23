@@ -25,7 +25,7 @@ export class Markdownify {
     // Expand tilde in uvPath if present
     const expandedUvPath = expandHome(uvPath);
 
-    // First try using uvx to run markitdown directly (works if uv is installed)
+    // First try using uv run to execute markitdown directly (works if uv is installed)
     try {
       const { stdout, stderr } = await execFileAsync(expandedUvPath, [
         "run",
@@ -33,16 +33,23 @@ export class Markdownify {
         "markitdown",
         "markitdown",
         filePath,
-      ]);
+      ], {
+        env: {
+          ...process.env,
+          PATH: `${process.env.PATH}:${path.dirname(expandedUvPath)}`,
+        }
+      });
 
-      if (stderr && !stderr.includes("Reading inline script")) {
-        // uv sometimes outputs informational messages to stderr, ignore those
-        throw new Error(`Error executing command: ${stderr}`);
+      // uv sometimes outputs informational messages to stderr, ignore common ones
+      if (stderr && !stderr.includes("Reading inline script") &&
+          !stderr.includes("Resolved") && !stderr.includes("Downloading") &&
+          !stderr.includes("Installed")) {
+        console.error(`[markdownify] Warning from uv: ${stderr}`);
       }
 
       return stdout;
     } catch (error: any) {
-      // If uvx fails, try the local venv installation as fallback
+      // If uv run fails, try the local venv installation as fallback
       const venvPath = path.join(projectRoot, ".venv");
       const markitdownPath = path.join(
         venvPath,
@@ -52,10 +59,14 @@ export class Markdownify {
 
       if (!fs.existsSync(markitdownPath)) {
         throw new Error(
-          `markitdown executable not found. Please install uv and markitdown:\n` +
-          `  curl -LsSf https://astral.sh/uv/install.sh | sh\n` +
-          `Or run 'npm run setup' if installed locally.\n` +
-          `Original error: ${error.message}`
+          `markitdown executable not found.\n\n` +
+          `Tried:\n` +
+          `1. uv run --with markitdown (failed: ${error.message})\n` +
+          `2. Local venv at ${markitdownPath} (not found)\n\n` +
+          `Solutions:\n` +
+          `- Ensure uv is installed: curl -LsSf https://astral.sh/uv/install.sh | sh\n` +
+          `- Ensure uv is in PATH: ${expandedUvPath}\n` +
+          `- Or run 'npm run setup' to create local venv\n`
         );
       }
 
