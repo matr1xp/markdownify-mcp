@@ -22,32 +22,55 @@ export class Markdownify {
     projectRoot: string,
     uvPath: string,
   ): Promise<string> {
-    const venvPath = path.join(projectRoot, ".venv");
-    const markitdownPath = path.join(
-      venvPath,
-      process.platform === "win32" ? "Scripts" : "bin",
-      `markitdown${process.platform === "win32" ? ".exe" : ""}`,
-    );
-
-    if (!fs.existsSync(markitdownPath)) {
-      throw new Error("markitdown executable not found");
-    }
-
     // Expand tilde in uvPath if present
     const expandedUvPath = expandHome(uvPath);
 
-    // Use execFile to prevent command injection
-    const { stdout, stderr } = await execFileAsync(expandedUvPath, [
-      "run",
-      markitdownPath,
-      filePath,
-    ]);
+    // First try using uvx to run markitdown directly (works if uv is installed)
+    try {
+      const { stdout, stderr } = await execFileAsync(expandedUvPath, [
+        "run",
+        "--with",
+        "markitdown",
+        "markitdown",
+        filePath,
+      ]);
 
-    if (stderr) {
-      throw new Error(`Error executing command: ${stderr}`);
+      if (stderr && !stderr.includes("Reading inline script")) {
+        // uv sometimes outputs informational messages to stderr, ignore those
+        throw new Error(`Error executing command: ${stderr}`);
+      }
+
+      return stdout;
+    } catch (error: any) {
+      // If uvx fails, try the local venv installation as fallback
+      const venvPath = path.join(projectRoot, ".venv");
+      const markitdownPath = path.join(
+        venvPath,
+        process.platform === "win32" ? "Scripts" : "bin",
+        `markitdown${process.platform === "win32" ? ".exe" : ""}`,
+      );
+
+      if (!fs.existsSync(markitdownPath)) {
+        throw new Error(
+          `markitdown executable not found. Please install uv and markitdown:\n` +
+          `  curl -LsSf https://astral.sh/uv/install.sh | sh\n` +
+          `Or run 'npm run setup' if installed locally.\n` +
+          `Original error: ${error.message}`
+        );
+      }
+
+      const { stdout, stderr } = await execFileAsync(expandedUvPath, [
+        "run",
+        markitdownPath,
+        filePath,
+      ]);
+
+      if (stderr) {
+        throw new Error(`Error executing command: ${stderr}`);
+      }
+
+      return stdout;
     }
-
-    return stdout;
   }
 
   private static async saveToTempFile(
